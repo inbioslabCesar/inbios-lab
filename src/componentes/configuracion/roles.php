@@ -1,203 +1,128 @@
-<?php $conn = new PDO("mysql:host=localhost;dbname=u330560936_laboratorio", "u330560936_inbioslab", "41950361Cesarp$");
-$mensaje = "";
-$roles_disponibles = ['usuario', 'admin', 'colaborador'];
-// Búsqueda y filtro 
-$busqueda = isset($_GET['buscar']) ? trim($_GET['buscar']) : '';
-$filtro_rol = isset($_GET['filtro_rol']) ? trim($_GET['filtro_rol']) : '';
-$filtro_cargo = isset($_GET['filtro_cargo']) ? trim($_GET['filtro_cargo']) : '';
+<?php // Conexión segura (ajusta tus datos) 
+$host = 'localhost';
+$db = 'u330560936_laboratorio';
+$user = 'u330560936_inbioslab';
+$pass = '41950361Cesarp$';
+$charset = 'utf8mb4';
+$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+$options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,];
+try {
+    $pdo = new PDO($dsn, $user, $pass, $options);
+} catch (\PDOException $e) {
+    exit('Error de conexión: ' . $e->getMessage());
+}
+$mensaje = '';
+// Alta de usuario con verificación de email único 
+if (isset($_POST['alta_usuario'])) {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM usuarios WHERE email = ?");
+    $stmt->execute([$_POST['email']]);
+    if ($stmt->fetchColumn() > 0) {
+        $mensaje = '<div class="alert alert-danger">El email ya está registrado. Usa otro correo.</div>';
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO usuarios (nombre, apellido, email, password, rol, cargo, profesion, dni, fecha_nacimiento, genero, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+        $stmt->execute([$_POST['nombre'], $_POST['apellido'], $_POST['email'], password_hash($_POST['contrasena'], PASSWORD_DEFAULT), $_POST['rol'], $_POST['cargo'], $_POST['profesion'], $_POST['dni'], $_POST['fecha_nacimiento'], $_POST['genero']]);
+        $mensaje = '<div class="alert alert-success">Usuario registrado exitosamente.</div>';
+    }
+}
+// Edición de usuario 
+if (isset($_POST['editar_usuario'])) {
+    $campos = ['nombre' => $_POST['nombre'], 'apellido' => $_POST['apellido'], 'email' => $_POST['email'], 'rol' => $_POST['rol'], 'cargo' => $_POST['cargo'], 'profesion' => $_POST['profesion'], 'dni' => $_POST['dni'], 'fecha_nacimiento' => $_POST['fecha_nacimiento'], 'genero' => $_POST['genero']];
+    if (!empty($_POST['contrasena'])) {
+        $campos['password'] = password_hash($_POST['contrasena'], PASSWORD_DEFAULT);
+    }
+    $set = [];
+    foreach ($campos as $k => $v) {
+        $set[] = "$k = ?";
+    }
+    $stmt = $pdo->prepare("UPDATE usuarios SET " . implode(', ', $set) . " WHERE id = ?");
+    $campos = array_values($campos);
+    $campos[] = $_POST['id'];
+    $stmt->execute($campos);
+    $mensaje = '<div class="alert alert-success">Usuario actualizado exitosamente.</div>';
+}
+// Eliminar usuario 
+if (isset($_GET['eliminar'])) {
+    $stmt = $pdo->prepare("DELETE FROM usuarios WHERE id = ?");
+    $stmt->execute([$_GET['eliminar']]);
+    $mensaje = '<div class="alert alert-warning">Usuario eliminado.</div>';
+}
 // Paginación 
 $por_pagina = 10;
-$pagina = isset($_GET['pagina']) && is_numeric($_GET['pagina']) ? (int)$_GET['pagina'] : 1;
+$pagina = $_GET['pagina'] ?? 1;
 $inicio = ($pagina - 1) * $por_pagina;
-// Eliminación de usuario 
-if (isset($_GET['eliminar'])) {
-    $stmt = $conn->prepare("DELETE FROM usuarios WHERE id = ?");
-    $stmt->execute([$_GET['eliminar']]);
-    $mensaje .= "<div class='alert alert-warning'>Usuario eliminado.</div>";
-}
-// Cargar usuario para editar 
+$total_usuarios = $pdo->query("SELECT COUNT(*) FROM usuarios")->fetchColumn();
+$total_paginas = ceil($total_usuarios / $por_pagina);
+// Obtener usuarios 
+$stmt = $pdo->prepare("SELECT * FROM usuarios ORDER BY id DESC LIMIT $inicio, $por_pagina");
+$stmt->execute();
+$usuarios = $stmt->fetchAll();
+// Para editar 
 $usuario_editar = null;
 if (isset($_GET['editar'])) {
-    $stmt = $conn->prepare("SELECT * FROM usuarios WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE id = ?");
     $stmt->execute([$_GET['editar']]);
-    $usuario_editar = $stmt->fetch(PDO::FETCH_ASSOC);
-}
-// Proceso de edición 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_usuario'])) {
-    $id = $_POST['id'];
-    $nombre = trim($_POST['nombre']);
-    $apellido = trim($_POST['apellido']);
-    $email = trim($_POST['email']);
-    $rol = trim($_POST['rol']);
-    $cargo = trim($_POST['cargo']);
-    $profesion = trim($_POST['profesion']);
-    $dni = trim($_POST['dni']);
-    $fecha_nacimiento = trim($_POST['fecha_nacimiento']);
-    $genero = trim($_POST['genero']);
-    $stmt = $conn->prepare("UPDATE usuarios SET nombre=?, apellido=?, email=?, rol=?, cargo=?, profesion=?, dni=?, fecha_nacimiento=?, genero=? WHERE id=?");
-    $ok = $stmt->execute([$nombre, $apellido, $email, $rol, $cargo, $profesion, $dni, $fecha_nacimiento, $genero, $id]);
-    $mensaje .= $ok ? "<div class='alert alert-success'>Usuario actualizado correctamente.</div>" : "<div class='alert alert-danger'>Error al actualizar usuario.</div>";
-    $usuario_editar = null;
-}
-// Proceso de alta 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['alta_usuario'])) {
-    $nombre = trim($_POST['nombre']);
-    $apellido = trim($_POST['apellido']);
-    $email = trim($_POST['email']);
-    $rol = trim($_POST['rol']);
-    $cargo = trim($_POST['cargo']);
-    $profesion = trim($_POST['profesion']);
-    $dni = trim($_POST['dni']);
-    $fecha_nacimiento = trim($_POST['fecha_nacimiento']);
-    $genero = trim($_POST['genero']);
-    $password_plano = bin2hex(random_bytes(4));
-    $password_hash = password_hash($password_plano, PASSWORD_DEFAULT);
-    $stmt = $conn->prepare("INSERT INTO usuarios (nombre, apellido, email, password, rol, cargo, profesion, dni, fecha_nacimiento, genero) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $ok = $stmt->execute([$nombre, $apellido, $email, $password_hash, $rol, $cargo, $profesion, $dni, $fecha_nacimiento, $genero]);
-    if ($ok) {
-        $mensaje .= "<div class='alert alert-success'>Usuario creado. Contraseña generada: <b>$password_plano</b></div>";
-    } else {
-        $mensaje .= "<div class='alert alert-danger'>Error al crear usuario. ¿El email ya existe?</div>";
-    }
-}
-// Exportar a Excel (CSV) 
-if (isset($_GET['exportar']) && $_GET['exportar'] === 'csv') {
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename=usuarios.csv');
-    $output = fopen('php://output', 'w');
-    fputcsv($output, ['Nombre', 'Apellido', 'Email', 'Rol', 'Cargo', 'Profesión', 'DNI', 'Fecha de nacimiento', 'Género']);
-    // Exportar todos los resultados filtrados (sin paginación) 
-    $sql_export = "SELECT * FROM usuarios WHERE 1";
-    $params_export = [];
-    if ($busqueda) {
-        $sql_export .= " AND (nombre LIKE ? OR apellido LIKE ? OR email LIKE ?)";
-        $params_export[] = "%$busqueda%";
-        $params_export[] = "%$busqueda%";
-        $params_export[] = "%$busqueda%";
-    }
-    if ($filtro_rol) {
-        $sql_export .= " AND rol = ?";
-        $params_export[] = $filtro_rol;
-    }
-    if ($filtro_cargo) {
-        $sql_export .= " AND cargo = ?";
-        $params_export[] = $filtro_cargo;
-    }
-    $sql_export .= " ORDER BY nombre, apellido";
-    $stmt_export = $conn->prepare($sql_export);
-    $stmt_export->execute($params_export);
-    while ($row = $stmt_export->fetch(PDO::FETCH_ASSOC)) {
-        fputcsv($output, [$row['nombre'], $row['apellido'], $row['email'], $row['rol'], $row['cargo'], $row['profesion'], $row['dni'], $row['fecha_nacimiento'], $row['genero']]);
-    }
-    fclose($output);
-    exit;
-}
-// Obtener todos los roles y cargos distintos para los selects 
-$roles_lista = $conn->query("SELECT DISTINCT rol FROM usuarios")->fetchAll(PDO::FETCH_COLUMN);
-$cargos_lista = $conn->query("SELECT DISTINCT cargo FROM usuarios")->fetchAll(PDO::FETCH_COLUMN);
-// Consulta con búsqueda y paginación 
-$sql = "SELECT * FROM usuarios WHERE 1";
-$params = [];
-if ($busqueda) {
-    $sql .= " AND (nombre LIKE ? OR apellido LIKE ? OR email LIKE ?)";
-    $params[] = "%$busqueda%";
-    $params[] = "%$busqueda%";
-    $params[] = "%$busqueda%";
-}
-if ($filtro_rol) {
-    $sql .= " AND rol = ?";
-    $params[] = $filtro_rol;
-}
-if ($filtro_cargo) {
-    $sql .= " AND cargo = ?";
-    $params[] = $filtro_cargo;
-}
-$sql .= " ORDER BY nombre, apellido LIMIT $inicio, $por_pagina";
-$stmt = $conn->prepare($sql);
-$stmt->execute($params);
-$usuarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
-// Total para paginación 
-$sql_total = "SELECT COUNT(*) FROM usuarios WHERE 1";
-$params_total = [];
-if ($busqueda) {
-    $sql_total .= " AND (nombre LIKE ? OR apellido LIKE ? OR email LIKE ?)";
-    $params_total[] = "%$busqueda%";
-    $params_total[] = "%$busqueda%";
-    $params_total[] = "%$busqueda%";
-}
-if ($filtro_rol) {
-    $sql_total .= " AND rol = ?";
-    $params_total[] = $filtro_rol;
-}
-if ($filtro_cargo) {
-    $sql_total .= " AND cargo = ?";
-    $params_total[] = $filtro_cargo;
-}
-$stmt_total = $conn->prepare($sql_total);
-$stmt_total->execute($params_total);
-$total_usuarios = $stmt_total->fetchColumn();
-$total_paginas = ceil($total_usuarios / $por_pagina); ?> <?= $mensaje ?>
-<?php if ($usuario_editar): ?> <form method="post" class="row g-3 mb-4"> <input type="hidden" name="editar_usuario" value="1"> <input type="hidden" name="id" value="<?= $usuario_editar['id'] ?>">
-        <div class="col-md-6"> <label class="form-label">Nombre</label> <input type="text" name="nombre" class="form-control" value="<?= htmlspecialchars($usuario_editar['nombre']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">Apellido</label> <input type="text" name="apellido" class="form-control" value="<?= htmlspecialchars($usuario_editar['apellido']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">Email</label> <input type="email" name="email" class="form-control" value="<?= htmlspecialchars($usuario_editar['email']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">Rol</label> <select name="rol" class="form-select" required> <?php foreach ($roles_disponibles as $rol): ?> <option value="<?= $rol ?>" <?= $rol == $usuario_editar['rol'] ? 'selected' : '' ?>><?= ucfirst($rol) ?></option> <?php endforeach; ?> </select> </div>
-        <div class="col-md-6"> <label class="form-label">Cargo</label> <input type="text" name="cargo" class="form-control" value="<?= htmlspecialchars($usuario_editar['cargo']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">Profesión</label> <input type="text" name="profesion" class="form-control" value="<?= htmlspecialchars($usuario_editar['profesion']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">DNI</label> <input type="text" name="dni" class="form-control" value="<?= htmlspecialchars($usuario_editar['dni']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">Fecha de nacimiento</label> <input type="date" name="fecha_nacimiento" class="form-control" value="<?= htmlspecialchars($usuario_editar['fecha_nacimiento']) ?>" required> </div>
-        <div class="col-md-6"> <label class="form-label">Género</label> <select name="genero" class="form-select" required>
-                <option value="masculino" <?= $usuario_editar['genero'] == 'masculino' ? 'selected' : ''; ?>>Masculino</option>
-                <option value="femenino" <?= $usuario_editar['genero'] == 'femenino' ? 'selected' : ''; ?>>Femenino</option>
-                <option value="otro" <?= $usuario_editar['genero'] == 'otro' ? 'selected' : ''; ?>>Otro</option>
+    $usuario_editar = $stmt->fetch();
+} ?>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Gestión de Usuarios</h3>
+        <div> <a href="export_excel.php" class="btn btn-outline-success btn-sm me-2"><i class="bi bi-file-earmark-excel"></i> Excel</a> <a href="export_pdf.php" class="btn btn-outline-danger btn-sm me-2"><i class="bi bi-file-earmark-pdf"></i> PDF</a> <a href="export_csv.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-filetype-csv"></i> CSV</a> </div>
+    </div> <!-- Mensajes de acción --> <?= $mensaje ?> <!-- Formulario alta/edición -->
+    <form class="row g-3 mb-4" method="POST" action=""> <input type="hidden" name="id" value="<?= htmlspecialchars($usuario_editar['id'] ?? '') ?>">
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Nombre</label> <input type="text" class="form-control" name="nombre" required value="<?= htmlspecialchars($usuario_editar['nombre'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Apellido</label> <input type="text" class="form-control" name="apellido" required value="<?= htmlspecialchars($usuario_editar['apellido'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Email</label> <input type="email" class="form-control" name="email" required value="<?= htmlspecialchars($usuario_editar['email'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Rol</label> <select class="form-select" name="rol" required>
+                <option value="">Selecciona un rol</option>
+                <option value="admin" <?= (isset($usuario_editar['rol']) && $usuario_editar['rol'] == 'admin') ? 'selected' : '' ?>>Admin</option>
+                <option value="usuario" <?= (isset($usuario_editar['rol']) && $usuario_editar['rol'] == 'usuario') ? 'selected' : '' ?>>Usuario</option>
             </select> </div>
-        <div class="col-12"> <button type="submit" class="btn btn-primary">Actualizar usuario</button> <a href="?modulo=roles" class="btn btn-secondary">Cancelar</a> </div>
-    </form> <?php endif; ?>
-
-<?php if (!$usuario_editar): ?> <form method="post" class="row g-3 mb-4"> <input type="hidden" name="alta_usuario" value="1">
-        <div class="col-md-6"> <label class="form-label">Nombre</label> <input type="text" name="nombre" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">Apellido</label> <input type="text" name="apellido" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">Email</label> <input type="email" name="email" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">Rol</label> <select name="rol" class="form-select" required> <?php foreach ($roles_disponibles as $rol): ?> <option value="<?= $rol ?>"><?= ucfirst($rol) ?></option> <?php endforeach; ?> </select> </div>
-        <div class="col-md-6"> <label class="form-label">Cargo</label> <input type="text" name="cargo" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">Profesión</label> <input type="text" name="profesion" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">DNI</label> <input type="text" name="dni" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">Fecha de nacimiento</label> <input type="date" name="fecha_nacimiento" class="form-control" required> </div>
-        <div class="col-md-6"> <label class="form-label">Género</label> <select name="genero" class="form-select" required>
-                <option value="masculino">Masculino</option>
-                <option value="femenino">Femenino</option>
-                <option value="otro">Otro</option>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Cargo</label> <input type="text" class="form-control" name="cargo" value="<?= htmlspecialchars($usuario_editar['cargo'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Profesión</label> <input type="text" class="form-control" name="profesion" value="<?= htmlspecialchars($usuario_editar['profesion'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">DNI</label> <input type="text" class="form-control" name="dni" value="<?= htmlspecialchars($usuario_editar['dni'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Fecha de nacimiento</label> <input type="date" class="form-control" name="fecha_nacimiento" value="<?= htmlspecialchars($usuario_editar['fecha_nacimiento'] ?? '') ?>"> </div>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Género</label> <select class="form-select" name="genero">
+                <option value="">Selecciona género</option>
+                <option value="M" <?= (isset($usuario_editar['genero']) && $usuario_editar['genero'] == 'M') ? 'selected' : '' ?>>Masculino</option>
+                <option value="F" <?= (isset($usuario_editar['genero']) && $usuario_editar['genero'] == 'F') ? 'selected' : '' ?>>Femenino</option>
             </select> </div>
-        <div class="col-12"> <button type="submit" class="btn btn-success">Crear usuario</button> </div>
-    </form> <?php endif; ?>
-<h3>Lista de usuarios</h3>
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>Nombre</th>
-            <th>Apellido</th>
-            <th>Email</th>
-            <th>Rol</th>
-            <th>Cargo</th>
-            <th>Profesión</th>
-            <th>DNI</th>
-            <th>Fecha de nacimiento</th>
-            <th>Género</th>
-            <th>Acciones</th>
-        </tr>
-    </thead>
-    <tbody> <?php foreach ($usuarios as $user): ?> <tr>
-                <td><?= htmlspecialchars($user['nombre']) ?></td>
-                <td><?= htmlspecialchars($user['apellido']) ?></td>
-                <td><?= htmlspecialchars($user['email']) ?></td>
-                <td><?= htmlspecialchars($user['rol']) ?></td>
-                <td><?= htmlspecialchars($user['cargo']) ?></td>
-                <td><?= htmlspecialchars($user['profesion']) ?></td>
-                <td><?= htmlspecialchars($user['dni']) ?></td>
-                <td><?= htmlspecialchars($user['fecha_nacimiento']) ?></td>
-                <td><?= htmlspecialchars($user['genero']) ?></td>
-                <td> <a href="?modulo=roles&editar=<?= $user['id'] ?>" class="btn btn-sm btn-warning">Editar</a> <a href="?modulo=roles&eliminar=<?= $user['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('¿Seguro que deseas eliminar este usuario?');">Eliminar</a> </td>
-            </tr> <?php endforeach; ?> </tbody>
-</table> <?php if ($total_paginas > 1): ?> <nav>
-        <ul class="pagination"> <?php for ($i = 1; $i <= $total_paginas; $i++): ?> <li class="page-item <?= $i == $pagina ? 'active' : '' ?>"> <a class="page-link" href="?modulo=roles&buscar=<?= urlencode($busqueda) ?>&filtro_rol=<?= urlencode($filtro_rol) ?>&filtro_cargo=<?= urlencode($filtro_cargo) ?>&pagina=<?= $i ?>"><?= $i ?></a> </li> <?php endfor; ?> </ul>
-    </nav> <?php endif; ?>
+        <div class="col-12 col-md-6 col-lg-4"> <label class="form-label">Contraseña <?= $usuario_editar ? '(dejar vacío para no cambiar)' : '' ?></label> <input type="password" class="form-control" name="contrasena" <?= $usuario_editar ? '' : 'required' ?>> </div>
+        <div class="col-12"> <button type="submit" class="btn btn-primary w-100" name="<?= $usuario_editar ? 'editar_usuario' : 'alta_usuario' ?>"> <?= $usuario_editar ? 'Actualizar usuario' : 'Crear usuario' ?> </button> </div>
+    </form>
+    <!-- Tabla de usuarios -->
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Nombre</th>
+                    <th>Apellido</th>
+                    <th>Email</th>
+                    <th>Rol</th>
+                    <th>Cargo</th>
+                    <th>Profesión</th>
+                    <th>DNI</th>
+                    <th>Fecha de nacimiento</th>
+                    <th>Género</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody> <?php foreach ($usuarios as $usuario): ?> <tr>
+                        <td><?= htmlspecialchars($usuario['nombre'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['apellido'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['email'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['rol'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['cargo'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['profesion'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['dni'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['fecha_nacimiento'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($usuario['genero'] ?? '') ?></td>
+                        <td> <a href="?modulo=configuracion&submodulo=roles&editar=<?= $usuario['id'] ?>" class="btn btn-sm btn-warning mb-1">Editar</a> <a href="?modulo=configuracion&submodulo=roles&eliminar=<?= $usuario['id'] ?>" class="btn btn-sm btn-danger mb-1" onclick="return confirm('¿Seguro que deseas eliminar este usuario?')">Eliminar</a> </td>
+                    </tr> <?php endforeach; ?> </tbody>
+        </table>
+    </div> <!-- Paginación Bootstrap -->
+    <nav>
+        <ul class="pagination justify-content-center"> <?php for ($i = 1; $i <= $total_paginas; $i++): ?> <li class="page-item <?= ($i == $pagina) ? 'active' : '' ?>"> <a class="page-link" href="?modulo=configuracion&submodulo=roles&pagina=<?= $i ?>"><?= $i ?></a> </li> <?php endfor; ?> </ul>
+    </nav>
+</div>

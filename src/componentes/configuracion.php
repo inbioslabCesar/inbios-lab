@@ -4,27 +4,16 @@
 if (!isset($_SESSION['usuario_rol']) || $_SESSION['usuario_rol'] !== 'admin') {
     echo "<div class='alert alert-danger'>No tienes permisos para acceder a la configuración.</div>";
     exit;
-} ?>
-<?php var_dump($_SESSION); // Solo para depuración, luego bórralo 
-?>
-<?php // Asegúrate de proteger esta sección solo para admins 
-if (!isset($_SESSION['usuario_rol']) || $_SESSION['usuario_rol'] !== 'admin') {
-    echo "<div class='alert alert-danger'>No tienes permisos para acceder a la configuración.</div>";
-    exit;
 }
-// Determina el submódulo a mostrar (roles, chatbot, etc.) 
+
 $submodulo = $_GET['submodulo'] ?? 'roles';
-// Menú de configuración 
-?> <h2>Configuración General</h2>
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item"> <a class="nav-link <?= $submodulo === 'roles' ? 'active' : '' ?>" href="?modulo=configuracion&submodulo=roles">Roles y usuarios</a> </li>
-    <li class="nav-item"> <a class="nav-link <?= $submodulo === 'chatbot' ? 'active' : '' ?>" href="?modulo=configuracion&submodulo=chatbot">Administrar chatbot</a> </li>
-    <li class="nav-item"> <a class="nav-link <?= $submodulo === 'no_respondidas' ? 'active' : '' ?>" href="?modulo=configuracion&submodulo=no_respondidas">Preguntas no respondidas</a> </li>
-    <li class="nav-item"> <a class="nav-link <?= $submodulo === 'masivo' ? 'active' : '' ?>" href="?modulo=configuracion&submodulo=masivo">Carga masiva</a> </li>
-</ul>
-<div class="mt-3"> <?php $moduloPath = __DIR__ . "/configuracion/{$submodulo}.php";
-                    if (file_exists($moduloPath)) {
-                        include $moduloPath;
-                    } else {
-                        echo "<div class='alert alert-warning'>Módulo no encontrado.</div>";
-                    } ?> </div>
+$submodulos = ['roles' => 'Roles', 'chatbot' => 'Chatbot', 'no_respondidas' => 'No Respondidas', 'masivo' => 'Carga Masiva']; ?> <div class="container-fluid py-4" id="contenido-principal">
+    <ul class="nav nav-tabs mb-4" id="configTabs" role="tablist"> <?php foreach ($submodulos as $id => $nombre): ?> <li class="nav-item" role="presentation"> <a class="nav-link <?php echo ($submodulo === $id) ? 'active bg-primary text-white' : ''; ?>" href="?modulo=configuracion&submodulo=<?php echo $id; ?>"> <?php echo $nombre; ?> </a> </li> <?php endforeach; ?> </ul>
+    <div class="tab-content p-4 bg-white rounded shadow-sm"> <?php $ruta = __DIR__ ."/configuracion/{$submodulo}.php";
+                                                                if (file_exists($ruta)) {
+                                                                    include $ruta;
+                                                                } else {
+                                                                    echo '<div class="alert alert-warning text-center">El submódulo seleccionado no existe.</div>';
+                                                                } ?> <div class="mt-4 text-end"> <a href="index.php?modulo=panel" class="btn btn-secondary"> <i class="bi bi-arrow-left"></i> Volver al panel </a> <button class="btn btn-success ms-2"> <i class="bi bi-save"></i> Guardar cambios </button> </div>
+    </div>
+</div>
